@@ -1,0 +1,14 @@
+[Unit]
+Description=PaidPiper payment gateway service
+
+[Service]
+User=edikk202
+WorkingDirectory=/opt/torplus/PaymentServices/PaymentGateway
+ExecStart=/opt/torplus/PaymentServices/PaymentGateway/payment-gateway
+StandardOutput=syslog
+StandardError=syslog
+Restart=always
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target
