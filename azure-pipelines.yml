@@ -1,0 +1,155 @@
+# Go
+# Build your Go project.
+# Add steps that test, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/go
+
+trigger:
+- pp_master
+
+variables:
+   major: 1
+   minor: 0
+
+name: $(major).$(minor)$(Rev:.r)
+
+strategy:
+  matrix:
+    linux:
+      poolName: 'Ubuntu_Pool'
+      vmImage:
+      osName: 'linux'
+      arch: 'amd64'
+      ext: ''
+      addldflags: ''
+    windows:
+      poolName: 'Windows_Pool'
+      vmImage:
+      osName: 'windows'
+      arch: 'amd64'
+      ext: ".exe"
+      addldflags: '-ldflags -H=windowsgui'
+    mac:
+      poolName: 'Azure Pipelines'
+      vmImage: 'macOS-14'
+      osName: 'mac'
+      arch: 'amd64'
+      ext: ''
+      addldflags: ''
+    macarm:
+      poolName: 'MacOSArm64'
+      osName: 'mac'
+      arch: 'arm64'
+      ext: ''
+      addldflags: ''
+      addBuildNumber: 'BUILD_NUMBER=$(Build.BuildNumber)'
+      goVersion: '1.22.3'
+
+
+pool:
+  name: $(poolName)
+  vmImage: $(vmImage)
+
+steps:
+- task: InstallSSHKey@0
+  inputs:
+    knownHostsEntry: 'ssh.dev.azure.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Hr1oTWqNqOlzGJOfGJ4NakVyIzf1rXYd4d7wo6jBlkLvCA4odBlL0mDUyZ0/QUfTTqeu+tm22gOsv+VrVTMk6vwRU75gY/y9ut5Mb3bR5BV58dKXyq9A9UeB5Cakehn5Zgm6x1mKoVyf+FFn26iYqXJRgzIZZcZ5V6hrE0Qg39kZm4az48o0AUbf6Sp4SLdvnuMa2sVNwHBboS7EJkm57XQPVU3/QpyNLHbWDdzwtrlS+ez30S3AdYhLKEOxAG8weOnyrtLJAUen9mTkol8oII1edf7mWWbWVf0nBmly21+nZcmCTISQBtdcyPaEno7fFQMDD26/s0lfKob4Kw8H'
+    sshPublicKey: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDbFMfrNTVm6C6h03KPSO5QSdvkGpGVSZ5wvbklVJtB3XuhKb7urQYIp7zn/av5uRisJvpYJ3BWGXOfINHXPm/phBBXBR3zPFF6QZYqxFy50LVqeVPBUJpoxY+/SdipQFAs3CCTckVeQYmu3DDfuRVUMGJPljIeI2yqT8d1P3DuzmduCo+HwvBTQu6vOUaAiGLyAez4AnJqY+hFdub4RbUJq+7FrFlO02f+xDM8ZwEZqZ9grAJSpe/TiMgFDr2FNPwi5ZoTnF9Zztlsrir3foSafO61kEPGn/iajgDUrdLcKpw1oeDqLj+bijP8YVbUjoW7/GMTPOI7zPyirBqsokI62mPNsn5uGmoNR5IUd7SjZveB5bI/hWVVn47JOrxW1Csybu/TblMSRpFtmXNRpBoHiG6dBqTNiIeI1KK8+UTvw7vBVLGMnpvjKZDtC3DnRA493TVecU5/TQOdBNObGtGaJdNBhAagTj2eZfRxjBC3iywymvQZozsDJz/bFIefRV8= alex@alex-VB'
+    sshKeySecureFile: 'key'
+  displayName: "Create SSH files"
+
+- task: GoTool@0
+  inputs:
+    version: '1.22.3'
+  condition: ne( variables['arch'], 'arm64' )
+#  condition: eq(variables.osName, 'mac')
+
+- script: |
+    mkdir -p $(Build.BinariesDirectory)/go$(goVersion)
+    curl -LO https://golang.org/dl/go$(goVersion).darwin-arm64.tar.gz
+    tar -C $(Build.BinariesDirectory)/go$(goVersion) -xzf go$(goVersion).darwin-arm64.tar.gz --strip-components=1
+    echo "Installed Go $(goVersion) into $(Build.BinariesDirectory)/go$(goVersion)"
+  condition: eq( variables['arch'], 'arm64' )
+  displayName: 'Go $(goVersion) installation for macarm'
+
+- script: |
+    export PATH=$(Build.BinariesDirectory)/go$(goVersion)/bin:$PATH
+    go version
+    go env
+  displayName: 'Checking Go installation'
+- checkout: self 
+  clean: true
+  submodules: recursive
+  displayName: 'Fetching all the changes'
+- script: |
+    export PATH=$(Build.BinariesDirectory)/go$(goVersion)/bin:$PATH
+    go test -v ./... | true
+  workingDirectory: $(Build.SourcesDirectory)/PaymentGateway
+  displayName: 'Running all the tests'
+  
+- script: |
+    export PATH=$(Build.BinariesDirectory)/go$(goVersion)/bin:$PATH
+    make build_$(osName)
+    mv payment-gateway-$(osName)$(ext) payment-gateway$(ext)
+  workingDirectory: $(Build.SourcesDirectory)/PaymentGateway
+  displayName: 'Building Payment Gateway'
+  condition: ne( variables['arch'], 'arm64' )
+
+- script: |
+    export PATH=$(Build.BinariesDirectory)/go$(goVersion)/bin:$PATH
+    make build_$(osName)
+    mv payment-gateway-$(osName)$(ext) payment-gateway$(ext)
+  workingDirectory: $(Build.SourcesDirectory)/PaymentGateway
+  displayName: 'Building Payment Gateway for macarm'
+  condition: eq( variables['arch'], 'arm64' )
+
+- script: |
+    curl -L -o 7z-mac.tar.xz https://www.7-zip.org/a/7z2301-mac.tar.xz
+    mkdir -p 7z
+    tar -xf 7z-mac.tar.xz -C 7z
+    chmod +x ./7z/7zz
+  displayName: 'Install 7-Zip for macOS ARM64'
+  condition: eq( variables['arch'], 'arm64' )
+
+- script: |
+    ./7z/7zz a -t7z -mx=9 "$(Build.ArtifactStagingDirectory)/payment-gateway-$(osName)-$(arch)-$(Build.BuildNumber).7z" "$(Build.SourcesDirectory)/PaymentGateway/payment-gateway$(ext)"
+  displayName: 'Create 7z archive on macarm'
+  condition: eq( variables['arch'], 'arm64' )
+
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(Build.SourcesDirectory)/PaymentGateway/payment-gateway$(ext)'
+    includeRootFolder: true
+    archiveType: '7z'
+    sevenZipCompression: 'ultra'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/payment-gateway-$(osName)-$(arch)-$(Build.BuildNumber).7z'
+    replaceExistingArchive: true
+    verbose: true
+  condition: ne( variables['arch'], 'arm64' )
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'payment-gateway'
+    publishLocation: 'Container'
+
+# - task: Docker@1
+#   inputs:
+#     containerregistrytype: 'Azure Container Registry'
+#     azureSubscriptionEndpoint: 'U-BTech - CSP (Georest)(8a8eed1d-a101-45a3-bb4d-34065921a9aa)'
+#     azureContainerRegistry: 'torplusserviceregistry.azurecr.io'
+#     command: 'login'
+#   displayName: 'Docker login'
+#   condition: eq(variables.osName, 'linux')
+
+# - script: |
+#     make build_image
+#     echo Exit Code $?
+#     make image
+#     echo Exit Code $?
+#     make push
+#     echo Exit Code $?
+#     make clean_up
+#     echo Exit Code $?
+#   workingDirectory: $(Build.SourcesDirectory)/PaymentGateway/docker
+#   displayName: 'Docker build and push'
+#   condition: eq(variables.osName, 'linux')
