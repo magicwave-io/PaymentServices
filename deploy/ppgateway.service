@@ -1,0 +1,14 @@
+[Unit]
+Description=PaidPiper payment gateway service
+
+[Service]
+User=edikk202
+WorkingDirectory=/opt/paidpiper/PaymentServices/PaymentGateway
+ExecStart=/opt/paidpiper/PaymentServices/PaymentGateway/payment-gateway
+StandardOutput=syslog
+StandardError=syslog
+Restart=always
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target
