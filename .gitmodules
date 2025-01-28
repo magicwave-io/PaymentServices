@@ -1,0 +1,3 @@
+[submodule "payment-gateway-webui"]
+	path = payment-gateway-webui
+	url = https://github.com/magicwave-io/provider_service.git
